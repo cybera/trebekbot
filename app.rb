@@ -39,9 +39,14 @@ end
 post "/" do
   begin
     puts "[LOG] #{params}"
-    params[:text] = params[:text].sub(params[:trigger_word], "").strip 
+    if not params[:trigger_word].nil?
+      params[:text] = params[:text].sub(params[:trigger_word], "")
+    end
+    params[:text].strip!
     if params[:token] != ENV["OUTGOING_WEBHOOK_TOKEN"]
       response = "Invalid token"
+    elsif params[:user_id] == "USLACKBOT"
+      response = ""
     elsif is_channel_blacklisted?(params[:channel_name])
       response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
@@ -143,9 +148,13 @@ def process_answer(params)
   key = "current_question:#{channel_id}"
   current_question = $redis.get(key)
   reply = ""
-  if current_question.nil?
+  if !params[:trigger_word].nil? && current_question.nil?
     reply = trebek_me if !$redis.exists("shush:answer:#{channel_id}")
-  else
+  elsif params[:trigger_word].nil? && (current_question.nil? || !is_question_format?(params[:text]))
+    if params[:text].downcase.include? "trebek"
+      reply = trebek_me
+    end
+  elsif
     current_question = JSON.parse(current_question)
     current_answer = current_question["answer"]
     user_answer = params[:text]
