@@ -12,7 +12,7 @@ configure do
   Dotenv.load
   # Disable output buffering
   $stdout.sync = true
-  
+
   # Set up redis
   case settings.environment
   when :development
@@ -25,7 +25,7 @@ end
 
 # Handles the POST request made by the Slack Outgoing webhook
 # Params sent in the request:
-# 
+#
 # token=abc123
 # team_id=T0001
 # channel_id=C123456
@@ -35,7 +35,7 @@ end
 # user_name=Steve
 # text=trebekbot jeopardy me
 # trigger_word=trebekbot
-# 
+#
 post "/" do
   begin
     puts "[LOG] #{params}"
@@ -47,8 +47,8 @@ post "/" do
       response = "Invalid token"
     elsif params[:user_id] == "USLACKBOT"
       response = ""
-    elsif is_channel_blacklisted?(params[:channel_name])
-      response = "Sorry, can't play in this channel."
+    #elsif is_channel_blacklisted?(params[:channel_name])
+    #  response = "Sorry, can't play in this channel."
     elsif params[:text].match(/^jeopardy me/i)
       response = respond_with_question(params)
     elsif params[:text].match(/my score$/i)
@@ -71,7 +71,7 @@ post "/" do
 end
 
 # Puts together the json payload that needs to be sent back to Slack
-# 
+#
 def json_response_for_slack(reply)
   response = { text: reply, link_names: 1 }
   response[:username] = ENV["BOT_USERNAME"] unless ENV["BOT_USERNAME"].nil?
@@ -80,7 +80,7 @@ def json_response_for_slack(reply)
 end
 
 # Determines if a game of Jeopardy is allowed in the given channel
-# 
+#
 def is_channel_blacklisted?(channel_name)
   !ENV["CHANNEL_BLACKLIST"].nil? && ENV["CHANNEL_BLACKLIST"].split(",").find{ |a| a.gsub("#", "").strip == channel_name }
 end
@@ -90,7 +90,7 @@ end
 # Otherwise, speaks the answer to the previous round (if any),
 # speaks the category, value, and the new question, and shushes the bot for 5 seconds
 # (this is so two or more users can't do `jeopardy me` within 5 seconds of each other.)
-# 
+#
 def respond_with_question(params)
   channel_id = params[:channel_id]
   question = ""
@@ -118,13 +118,14 @@ end
 # If the answer doesn't have a value, sets a default of $200
 # If there's HTML in the answer, sanitizes it (otherwise it won't match the user answer)
 # Adds an "expiration" value, which is the timestamp of the Slack request + the seconds to answer config var
-# 
+#
 def get_question
   uri = "http://jservice.io/api/random?count=1"
   request = HTTParty.get(uri)
   puts "[LOG] #{request.body}"
   response = JSON.parse(request.body).first
   question = response["question"]
+  puts ENV["QUESTION_SUBSTRING_BLACKLIST"]
   if question.nil? || question.strip == "" || ENV["QUESTION_SUBSTRING_BLACKLIST"].split(",").any? { |phrase| question.include?(phrase) }
     response = get_question
   end
@@ -143,7 +144,7 @@ end
 # The answer is correct and not in the form of a question;
 # The answer is incorrect.
 # Update the score and marks the round as answer, depending on the case.
-# 
+#
 def process_answer(params)
   channel_id = params[:channel_id]
   user_id = params[:user_id]
@@ -189,7 +190,7 @@ end
 
 # Formats a number as currency.
 # For example -10000 becomes -$10,000
-# 
+#
 def currency_format(number, currency = "$")
   prefix = number >= 0 ? currency : "-#{currency}"
   moneys = number.abs.to_s
@@ -202,7 +203,7 @@ end
 # Checks if the respose is in the form of a question:
 # Removes punctuation and check if it begins with what/where/who
 # (I don't care if there's no question mark)
-# 
+#
 def is_question_format?(answer)
   answer.gsub(/[^\w\s]/i, "").match(/^(what|whats|where|wheres|who|whos) /i)
 end
@@ -215,7 +216,7 @@ end
 # Strips leading/trailing whitespace and downcases.
 # Finally, if the match is not exact, uses White similarity algorithm for "fuzzy" matching,
 # to account for typos, etc.
-# 
+#
 def is_correct_answer?(correct, answer)
   correct = correct.gsub(/[^\w\s]/i, "")
             .gsub(/^(the|a|an) /i, "")
@@ -241,7 +242,7 @@ end
 # and "shushing" the bot for 5 seconds, so if two users
 # answer at the same time, the second one won't trigger
 # a response from the bot.
-# 
+#
 def mark_question_as_answered(channel_id)
   $redis.pipelined do
     $redis.del("current_question:#{channel_id}")
@@ -251,14 +252,14 @@ def mark_question_as_answered(channel_id)
 end
 
 # Returns the given user's score.
-# 
+#
 def respond_with_user_score(user_id)
   user_score = get_user_score(user_id)
   "#{get_slack_name(user_id)}, your score is #{currency_format(user_score)}."
 end
 
 # Gets the given user's score from redis
-# 
+#
 def get_user_score(user_id)
   key = "user_score:#{user_id}"
   user_score = $redis.get(key)
@@ -271,7 +272,7 @@ end
 
 # Updates the given user's score in redis.
 # If the user doesn't have a score, initializes it at zero.
-# 
+#
 def update_score(user_id, score = 0)
   key = "user_score:#{user_id}"
   user_score = $redis.get(key)
@@ -288,10 +289,10 @@ end
 # Gets the given user's name(s) from redis.
 # If it's not in redis, makes an API request to Slack to get it,
 # and caches it in redis for a month.
-# 
+#
 # Options:
 # use_real_name => returns the users full name instead of just the first name
-# 
+#
 def get_slack_name(user_id, options = {})
   options = { :use_real_name => false }.merge(options)
   key = "slack_user_names:2:#{user_id}"
@@ -313,7 +314,7 @@ end
 # Makes an API request to Slack to get a user's set of names.
 # (Slack's outgoing webhooks only send the user ID, so we need this to
 # make the bot reply using the user's actual name.)
-# 
+#
 def get_slack_names_hash(user_id)
   uri = "https://slack.com/api/users.list?token=#{ENV["API_TOKEN"]}"
   request = HTTParty.get(uri)
@@ -334,7 +335,7 @@ end
 
 # Speaks the top scores across Slack.
 # The response is cached for 5 minutes.
-# 
+#
 def respond_with_leaderboard
   key = "leaderboard:1"
   response = $redis.get(key)
@@ -358,7 +359,7 @@ end
 
 # Speaks the bottom scores across Slack.
 # The response is cached for 5 minutes.
-# 
+#
 def respond_with_loserboard
   key = "loserboard:1"
   response = $redis.get(key)
@@ -381,7 +382,7 @@ def respond_with_loserboard
 end
 
 # Gets N scores from redis, with optional sorting.
-# 
+#
 def get_score_leaders(options = {})
   options = { :limit => 10, :order => "desc" }.merge(options)
   leaders = []
@@ -400,7 +401,7 @@ end
 
 # Funny quotes from SNL's Celebrity Jeopardy, to speak
 # when someone invokes trebekbot and there's no active round.
-# 
+#
 def trebek_me
   [ "Welcome back to Slack Jeopardy. Before we begin this Jeopardy round, I'd like to ask our contestants once again to please refrain from using ethnic slurs.",
     "Okay, Turd Ferguson.",
@@ -435,7 +436,7 @@ end
 
 # Shows the help text.
 # If you add a new command, make sure to add some help text for it here.
-# 
+#
 def respond_with_help
   reply = <<help
 Type `#{ENV["BOT_USERNAME"]} jeopardy me` to start a new round of Slack Jeopardy. I will pick the category and price. Anyone in the channel can respond.
